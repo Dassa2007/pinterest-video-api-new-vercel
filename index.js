@@ -18,45 +18,49 @@ app.get('/download', async (req, res) => {
     }
 
     try {
-        // pin.it short link එකක් නම් මුලින්ම ඒක expand කරගැනීම
+        // pin.it short link එකක් නම් ඔරිජිනල් ලින්ක් එකට හරවාගැනීම
         if (videoUrl.includes('pin.it')) {
             const shortRes = await axios.get(videoUrl, {
                 maxRedirects: 5,
                 headers: {
-                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 }
             });
             videoUrl = shortRes.request.res.responseUrl || videoUrl;
         }
 
-        // දැන් ඔරිජිනල් Pinterest පේජ් එක ලබාගැනීම
         const response = await axios.get(videoUrl, {
             headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Accept-Language": "en-US,en;q=0.9"
             }
         });
 
         const $ = cheerio.load(response.data);
+        let downloadLink = null;
 
-        // Meta tags වලින් වීඩියෝ ලින්ක් එක සෙවීම
-        let downloadLink = $('meta[property="og:video"]').attr('content') || 
-                           $('meta[property="og:video:secure_url"]').attr('content') ||
-                           $('meta[name="twitter:player:stream"]').attr('content');
-
-        // සමහර විට JSON දත්ත ඇතුළේ වීඩියෝ එක තිබිය හැක
-        if (!downloadLink) {
-            $('script').each((i, el) => {
-                const scriptContent = $(el).html();
-                if (scriptContent && scriptContent.includes('contentUrl')) {
-                    try {
-                        const match = scriptContent.match(/"contentUrl"\s*:\s*"(https:\/\/[^"]+)"/);
-                        if (match && match[1]) {
-                            downloadLink = match[1].replace(/\\u0026/g, '&');
-                        }
-                    } catch (err) {}
+        // 1. Pinterest __NEXT_DATA__ JSON එකෙන් වීඩියෝ ලින්ක් එක සෙවීම
+        const nextDataScript = $('#__NEXT_DATA__').html();
+        if (nextDataScript) {
+            try {
+                const jsonData = JSON.parse(nextDataScript);
+                const pinData = jsonData.props?.initialReduxState?.pins || jsonData.props?.pageProps?.initialReduxState?.pins;
+                if (pinData) {
+                    const pinKey = Object.keys(pinData)[0];
+                    const videoList = pinData[pinKey]?.videos?.video_list;
+                    if (videoList) {
+                        const qualities = Object.keys(videoList);
+                        // උසස්ම තත්ත්වයේ වීඩියෝ ලින්ක් එක ලබාගැනීම
+                        downloadLink = videoList[qualities[qualities.length - 1]]?.url;
+                    }
                 }
-            });
+            } catch (err) {}
+        }
+
+        // 2. වෙනත් ක්‍රමයකින් හෝ හමුනාවොත් og:video මඟින් උත්සාහ කිරීම
+        if (!downloadLink) {
+            downloadLink = $('meta[property="og:video"]').attr('content') || 
+                           $('meta[property="og:video:secure_url"]').attr('content');
         }
 
         if (!downloadLink) {
