@@ -18,33 +18,43 @@ app.get('/download', async (req, res) => {
     }
 
     try {
-        // Pinterest short links (pin.it) handle කරන්න redirect අල්ලගන්නවා
+        // Pinterest short links (pin.it) expand වෙලා යන redirection එක ලබාගැනීම
         const response = await axios.get(videoUrl, {
             headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5"
             },
-            maxRedirects: 5
+            maxRedirects: 10
         });
 
         const html = response.data;
         const $ = cheerio.load(html);
 
-        // Pinterest වීඩියෝ ලින්ක් එක තියෙන Meta tag එක හොයාගැනීම
+        // Pinterest වීඩියෝ ලින්ක් එක තියෙන Meta tag හොයාගැනීම
         let downloadLink = $('meta[property="og:video"]').attr('content') || 
-                           $('meta[property="og:video:secure_url"]').attr('content');
+                           $('meta[property="og:video:secure_url"]').attr('content') ||
+                           $('meta[name="twitter:player:stream"]').attr('content');
 
+        // සමහර අවස්ථවල JSON data ඇතුළේ ලින්ක් එක තියෙන්න පුළුවන්
         if (!downloadLink) {
-            // වෙනත් JSON data block එකකින් සොයාගැනීම
             const scriptData = $('script[data-relay-response="true"]').html();
             if (scriptData) {
-                const json = JSON.parse(scriptData);
-                // JSON පතෙන් video url එක ලබාගැනීමේ විකල්පය
-                // (සාමාන්‍යයෙන් og:video මගින් 90%ක්ම වැඩ කරයි)
+                try {
+                    const json = JSON.parse(scriptData);
+                    // JSON එකෙන් URL එක ලබාගැනීමේ ක්‍රමවේදය
+                    const pinData = json.response?.data?.v3GetPinQuery?.data;
+                    if (pinData && pinData.videos) {
+                        downloadLink = pinData.videos.video_list[Object.keys(pinData.videos.video_list)[0]].url;
+                    }
+                } catch (e) {
+                    // JSON parse error ignore කිරීම
+                }
             }
         }
 
         if (!downloadLink) {
-            return res.status(404).json({ error: "Video link not found. Make sure the URL is a valid Pinterest video pin." });
+            return res.status(404).json({ error: "Video link not found. Make sure it's a valid video pin." });
         }
 
         res.json({
